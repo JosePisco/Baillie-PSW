@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.sage": "python",
+        "miller_rabin.h": "c",
+        "crypto_utils.h": "c"
+    }
+}

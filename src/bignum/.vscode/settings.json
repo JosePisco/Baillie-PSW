@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "*.sage": "python",
+        "stdbool.h": "c",
+        "miller_rabin.h": "c",
+        "crypto_utils.h": "c",
+        "tests_bpsw.h": "c",
+        "bn.h": "c"
+    }
+}
