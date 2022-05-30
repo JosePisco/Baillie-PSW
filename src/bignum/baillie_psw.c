@@ -135,7 +135,6 @@ bool BN_strong_lucas_selfridge(BIGNUM *n)
     while (true) {
 
         // if D is negative, take the inv mod n of D, to compute modulos efficiently
-        //tmp_D = BN_dup(D); // tmp_D = D
         BN_copy(tmp_D, D); // tmp_D = D
 
         if (BN_cmp(D, bn_zero) < 0)

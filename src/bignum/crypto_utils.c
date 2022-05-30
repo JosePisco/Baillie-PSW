@@ -93,7 +93,6 @@ int lucas(BIGNUM *k, BIGNUM *D, BIGNUM *P, BIGNUM *n, struct lucas_sequence *luc
         /* get the ith bit (from left being 0 to right) of a number*/
         int bit = BN_is_bit_set(k_obj, bitlength - i);
 
-        //tmp_U = BN_dup(U);
         BN_copy(tmp_U, U);
         if (!BN_mod_mul(U, U, V, n, ctx)) goto done; // U = U * V % n
 
@@ -108,7 +107,6 @@ int lucas(BIGNUM *k, BIGNUM *D, BIGNUM *P, BIGNUM *n, struct lucas_sequence *luc
         if (!BN_lshift1(k, k)) goto done; // k *= 2
 
         if (bit == 1) {
-            //tmp_U = BN_dup(U);
             BN_copy(tmp_U, U);
             if (!BN_add(U_V_add, U, V)) goto done; // U + V
             if (!BN_mul(numerator, P, U_V_add, ctx)) goto done; // P * U+V
@@ -131,8 +129,6 @@ int lucas(BIGNUM *k, BIGNUM *D, BIGNUM *P, BIGNUM *n, struct lucas_sequence *luc
         goto done;
     }
 
-    //lucas_->U = BN_dup(U);
-    //lucas_->V = BN_dup(V);
     BN_copy(lucas_->U, U);
     BN_copy(lucas_->V, V);
     result = 1;
