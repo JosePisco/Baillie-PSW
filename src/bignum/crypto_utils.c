@@ -48,6 +48,8 @@ int jacobi_symbol(BIGNUM *d, BIGNUM *n)
     result = 0;
 
     done:
+        BN_free(d);
+        BN_free(n); // d and n were passed by dup
         BN_free(bn_four);
         BN_free(bn_eight);
         BN_free(d_mod_four);
@@ -91,7 +93,8 @@ int lucas(BIGNUM *k, BIGNUM *D, BIGNUM *P, BIGNUM *n, struct lucas_sequence *luc
         /* get the ith bit (from left being 0 to right) of a number*/
         int bit = BN_is_bit_set(k_obj, bitlength - i);
 
-        tmp_U = BN_dup(U);
+        //tmp_U = BN_dup(U);
+        BN_copy(tmp_U, U);
         if (!BN_mod_mul(U, U, V, n, ctx)) goto done; // U = U * V % n
 
         /* V = (V*V + D * tmp_U*tmp_U) * modinv(2, n) % n */
@@ -105,7 +108,8 @@ int lucas(BIGNUM *k, BIGNUM *D, BIGNUM *P, BIGNUM *n, struct lucas_sequence *luc
         if (!BN_lshift1(k, k)) goto done; // k *= 2
 
         if (bit == 1) {
-            tmp_U = BN_dup(U);
+            //tmp_U = BN_dup(U);
+            BN_copy(tmp_U, U);
             if (!BN_add(U_V_add, U, V)) goto done; // U + V
             if (!BN_mul(numerator, P, U_V_add, ctx)) goto done; // P * U+V
             if (!BN_mod_mul(U, numerator, modinv_two, n, ctx)) goto done; // U = (P * U + V) * modinv(2, n) % n
@@ -127,8 +131,10 @@ int lucas(BIGNUM *k, BIGNUM *D, BIGNUM *P, BIGNUM *n, struct lucas_sequence *luc
         goto done;
     }
 
-    lucas_->U = BN_dup(U);
-    lucas_->V = BN_dup(V);
+    //lucas_->U = BN_dup(U);
+    //lucas_->V = BN_dup(V);
+    BN_copy(lucas_->U, U);
+    BN_copy(lucas_->V, V);
     result = 1;
 
     done:
