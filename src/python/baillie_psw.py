@@ -1,7 +1,8 @@
 from math import sqrt
 from Crypto.Util.number import GCD
-from miller_rabin import miller_rabin
+from miller_rabin import miller_rabin, generate_basis
 
+primes = generate_basis(1000)
 
 def jacobi_symbol(d, n):
     d %= n
