@@ -1,8 +1,7 @@
 from math import sqrt
 from Crypto.Util.number import GCD
-from miller_rabin import miller_rabin, generate_basis
+from miller_rabin import miller_rabin
 
-primes = generate_basis(1000)
 
 def jacobi_symbol(d, n):
     d %= n
@@ -59,21 +58,14 @@ def strong_lucas_test(n, D, P, Q):
     # d is odd
     # using the lucas sequences formulas:
     # U_d mod n = 0 or V_(d*2^r) mod n = O
-    #print("d:",d)
-    #print("s:", s)
-    #print("D:", D)
-    #print("P:", P)
-    #print("Q:", Q)
 
     u_d = lucas(d, D, P, Q, n)[0]
-    #print("u_d:", u_d)
 
     if u_d % n == 0:
         return True
     else:
         for r in range(s):
             v_d = lucas(d * pow(2, r), D, P, Q, n)[1]
-            #print("v_d:", v_d)
             if v_d % n == 0:
                 return True
     return False
@@ -123,7 +115,6 @@ def strong_lucas_selfridge(n):
     P = 1
     Q = (1 - D) // 4 # is always an integer
     if D < 0:
-        #print("ICIIIIIIIII")
         D = pow(D, -1, n)
     return strong_lucas_test(n, D, P, Q)
 
@@ -148,17 +139,9 @@ def baillie_psw(n):
     # perform a strong Lucas-Selfridge test on N using Lucas sequences with the paramaters suggested by Selfridge
     return strong_lucas_selfridge(n)
 
-car = 5494192362793378419461850103325205105746618253649659755062958621743505179898846930508801354093259555029072978427447589979886135102666157147211855994196065010559627866228837393549736942388413848102819329
-arn = 18554525431820824592280314043934296355402115917852377301311719318802586275716645289777262350595688481395192557164440616580803261204902024969030829323747390730462863817347016368983019917352880671694306089467
 
-#from Crypto.Util.number import getPrime
-#prime = getPrime(1024)
+from Crypto.Util.number import getPrime
+prime = getPrime(1024)
 
 assert baillie_psw(19) == True
-#assert baillie_psw(car) == False
-#assert baillie_psw(arn) == False
-#assert baillie_psw(prime) == True
-
-for i in primes:
-    if baillie_psw(i) == False:
-        print(i)
+assert baillie_psw(prime) == True
