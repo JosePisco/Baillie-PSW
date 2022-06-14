@@ -37,7 +37,6 @@ bool BN_strong_lucas_test(BIGNUM *n, BIGNUM *D, BIGNUM *P)
         if (!BN_set_word(bn_s, s)) goto done;
         if (!BN_exp(two_pow, bn_two, bn_s, ctx)) goto done;
 
-        // if (!BN_div(d, NULL, n_plus_one, two_pow, ctx)) goto done; // d = (n+1) / 2^s
         if (!BN_rshift(d, n_plus_one, s)) goto done; // d = (n+1) / 2^s -> right shift 's' times
         if (BN_is_odd(d)) // if d % 2 == 1
             break;
@@ -131,7 +130,6 @@ bool BN_strong_lucas_selfridge(BIGNUM *n)
     if (!BN_set_word(sign, 1)) goto done;
 
     if (!BN_mul(D, D_abs, sign, ctx)) goto done; // D = d_abs * sign
-    //int i =0;
     while (true) {
 
         // if D is negative, take the inv mod n of D, to compute modulos efficiently
