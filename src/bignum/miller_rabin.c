@@ -1,63 +1,65 @@
 #include "crypto_utils.h"
 #include "miller_rabin.h"
 
-/* base 2 only for the Baillie-PSW test */
-bool BN_miller_rabin_base_2(BIGNUM *n)
+int bn_miller_rabin_base_2(const BIGNUM *n, BN_CTX *ctx)
 {
-    bool result = false;
+	BIGNUM *n_minus_one, *k, *x;
+	int i, s;
+	int ret = -1;
 
-    BIGNUM *bn_two = BN_new();
-    BIGNUM *bn_n_minus_one = BN_new();
-    BIGNUM *s = BN_new();
-    BIGNUM *x = BN_new();
+	BN_CTX_start(ctx);
 
-    BN_CTX *ctx = BN_CTX_new();
+	if ((n_minus_one = BN_CTX_get(ctx)) == NULL)
+		goto done;
+	if ((k = BN_CTX_get(ctx)) == NULL)
+		goto done;
+	if ((x = BN_CTX_get(ctx)) == NULL)
+		goto done;
 
+	if (BN_is_word(n, 2) || BN_is_word(n, 3)) {
+		ret = 1;
+		goto done;
+	}
 
+	if (BN_cmp(n, BN_value_one()) == 0 || !BN_is_odd(n)) {
+		ret = 0;
+		goto done;
+	}
 
-    if (!BN_set_word(bn_two, 2)) goto done;
+	if (!BN_sub(n_minus_one, n, BN_value_one()))
+		goto done;
 
-    /* specific cases */
-    if (BN_is_one(n) || BN_is_word(n, 2) || BN_is_word(n, 3)) {
-        result = true;
-        goto done;
-    }
+	s = 0;
+	while (!BN_is_bit_set(n_minus_one, s))
+		s++;
+	if (!BN_rshift(k, n_minus_one, s))
+		goto done;
 
-    if (!BN_is_odd(n)) {
-        result = false;
-        goto done;
-    }
+	/* If 2^k is 1 or -1 (mod n) then n is a 2-pseudoprime. */
+	if (!BN_set_word(x, 2))
+		goto done;
+	if (!BN_mod_exp(x, x, k, n, ctx))
+		goto done;
 
-    int r = 0;
-    if (!BN_sub(bn_n_minus_one, n, BN_value_one())) goto done;
-    if (!BN_copy(s, bn_n_minus_one)) goto done; // s = n - 1 : always even
-    while (BN_is_odd(s) == 0) { // s % 2 == 0 -> i.e. while s is even
-        r++;
-        if (!BN_rshift1(s, s)) goto done; // s /= 2
-    }
+	if (BN_is_one(x) || BN_cmp(x, n_minus_one) == 0) {
+		ret = 1;
+		goto done;
+	}
 
-    /* In general cases, the Miller Rabin test has more bases */
-    if (!BN_mod_exp(x, bn_two, s, n, ctx)) goto done; // x = 2^s mod n
-    if (BN_is_one(x) || BN_cmp(x, bn_n_minus_one) == 0) { // if x == 1 or x == n - 1
-        result = true;
-        goto done;
-    }
+	for (i = 1; i < s; i++) {
+		if (!BN_mod_sqr(x, x, n, ctx))
+			goto done;
+		if (BN_cmp(x, n_minus_one) == 0) {
+			ret = 1;
+			goto done;
+		}
+	}
 
-    for (int i = 0; i < r - 1; ++i) {
-        if (!BN_mod_exp(x, x, bn_two, n, ctx)) goto done; // x = x^2 mod n
-        if (BN_cmp(x, bn_n_minus_one) == 0) {
-            result = true;
-            goto done;
-        }
-    }
+	/* If we got here, n is definitely composite. */
+	ret = 0;
 
-    // result can only be false here
+ done:
+	BN_CTX_end(ctx);
 
-    done:
-        BN_free(bn_two);
-        BN_free(bn_n_minus_one);
-        BN_free(s);
-        BN_free(x);
-        BN_CTX_free(ctx);
-        return result;
+	return ret;
 }

@@ -3,8 +3,7 @@
 
 #define NUMBER_PRIMES 669
 
-void miller_rabin_tests(void);
-void jacobi_tests(void);
+/* Source : https://github.com/google/wycheproof/blob/master/testvectors/primality_test.json */
 void bpsw_tests(void);
 
 #endif /* UNIT_TESTS_BPSW_H */

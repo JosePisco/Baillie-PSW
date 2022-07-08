@@ -1,152 +1,125 @@
 #include "crypto_utils.h"
 
-int jacobi_symbol(BIGNUM *d, BIGNUM *n)
+/*
+ * For an odd n compute a / 2 (mod n). If a is even, we can do a plain
+ * division, otherwise calculate (a + n) / 2. Then reduce (mod n).
+ */
+static int bn_division_by_two_mod_n(BIGNUM *r, BIGNUM *a, const BIGNUM *n,
+	BN_CTX *ctx)
 {
-    int result = 1;
+	if (!BN_is_odd(n))
+		return 0;
 
-    BIGNUM *bn_four = BN_new();
-    BIGNUM *bn_eight = BN_new();
-    BIGNUM *d_mod_four = BN_new();
-    BIGNUM *n_mod_four = BN_new();
-    BIGNUM *r = BN_new();
+	if (!BN_mod(r, a, n, ctx))
+		return 0;
 
-    BN_CTX *ctx = BN_CTX_new();
+	if (BN_is_odd(r)) {
+		if (!BN_add(r, r, n))
+			return 0;
+	}
 
-    if (!BN_set_word(bn_four, 4)) goto done;
-    if (!BN_set_word(bn_eight, 8)) goto done;
+	if (!BN_rshift1(r, r))
+		return 0;
 
-    if (!BN_mod(d, d, n, ctx)) { // d %= n
-        result = 0;
-        goto done;
-    }
-
-    while (!BN_is_zero(d)) { // d != 0
-        while (!BN_is_odd(d)) { //d % 2 == 0
-            if (!BN_rshift1(d, d)) goto done; // d /= 2
-            if (!BN_mod(r, n, bn_eight, ctx)) goto done; // r = n % 8
-            if (BN_is_word(r, 3) || BN_is_word(r, 5)) // if r == 3 or r == 5
-                result = -result;
-        }
-
-        BN_swap(d, n);
-
-        if (!BN_mod(d_mod_four, d, bn_four, ctx)) goto done;
-        if (!BN_mod(n_mod_four, n, bn_four, ctx)) goto done;
-
-        if (BN_is_word(d_mod_four, 3) && BN_is_word(n_mod_four, 3)) // if d % 4 == 3 and n % 4 == 3
-            result = -result;
-
-        if (!BN_mod(d, d, n, ctx)) { // d %= n
-            result = 0;
-            goto done;
-        }
-    }
-
-    if (BN_is_one(n)) // if n == 1
-        goto done;
-
-    result = 0;
-
-    done:
-        BN_free(d);
-        BN_free(n); // d and n were passed by dup
-        BN_free(bn_four);
-        BN_free(bn_eight);
-        BN_free(d_mod_four);
-        BN_free(n_mod_four);
-        BN_free(r);
-        BN_CTX_free(ctx);
-        return result;
+	return 1;
 }
 
-int lucas(BIGNUM *k, BIGNUM *D, BIGNUM *P, BIGNUM *n, struct lucas_sequence *lucas_)
+/*
+ * Given the next binary digit of k and the current Lucas terms U and V, this
+ * helper computes the next terms in the Lucas sequence defined as follows:
+ *
+ *   U' = U * V                  (mod n)
+ *   V' = (V^2 + D * U^2) / 2    (mod n)
+ *
+ * If digit == 0, bn_lucas_step() returns U' and V'. If digit == 1, it returns
+ *
+ *   U'' = (U' + V') / 2         (mod n)
+ *   V'' = (V' + D * U') / 2     (mod n)
+ *
+ * Compare with FIPS 186-4, Appendix C.3.3, step 6.
+ */
+int bn_lucas_step(BIGNUM *U, BIGNUM *V, int digit, const BIGNUM *D,
+    const BIGNUM *n, BN_CTX *ctx)
 {
-    int result = 0;
+	BIGNUM *tmp;
+	int ret = 0;
 
-    BIGNUM *bn_two = BN_new();
-    BIGNUM *U = BN_new();
-    BIGNUM *tmp_U = BN_new();
-    BIGNUM *tmp_U_sqr = BN_new();
-    BIGNUM *V = BN_dup(P);
-    BIGNUM *V_sqr = BN_new();
-    BIGNUM *U_V_add = BN_new();
-    BIGNUM *P_V = BN_new();
-    BIGNUM *D_mul_tmp_U = BN_new();
-    BIGNUM *D_mul_tmp_U_sqr = BN_new();
-    BIGNUM *numerator = BN_new();
-    BIGNUM *k_obj = BN_dup(k); // objective to reach within the end of the computations
-    BIGNUM *modinv_two = BN_new();
+	BN_CTX_start(ctx);
 
-    BN_CTX *ctx = BN_CTX_new();
+	if ((tmp = BN_CTX_get(ctx)) == NULL)
+		goto done;
 
-    if (!BN_set_word(U, 1)) goto done;
-    if (!BN_set_word(k, 1)) goto done; // set k = 1 then increment it to check if we reach k_objective
-    if (!BN_set_word(bn_two, 2)) goto done;
-    if (!BN_mod_inverse(modinv_two, bn_two, n, ctx)) goto done; // usefull when we will need to divide by 2
+	/* Store D * U^2 before computing U'. */
+	if (!BN_sqr(tmp, U, ctx))
+		goto done;
+	if (!BN_mul(tmp, D, tmp, ctx))
+		goto done;
 
-    int bitlength = BN_num_bits(k_obj);
-    /* starts at bit 2, bit one is done by setting U=1 and V=P */
-    int i = 2;
-    /* Iterates over the bits of k from left to right */
-    while (i != bitlength + 1)
-    {
-        /* get the ith bit (from left being 0 to right) of a number*/
-        int bit = BN_is_bit_set(k_obj, bitlength - i);
+	/* U' = U * V (mod n). */
+	if (!BN_mod_mul(U, U, V, n, ctx))
+		goto done;
 
-        BN_copy(tmp_U, U);
-        if (!BN_mod_mul(U, U, V, n, ctx)) goto done; // U = U * V % n
+	/* V' = (V^2 + D * U^2) / 2 (mod n). */
+	if (!BN_sqr(V, V, ctx))
+		goto done;
+	if (!BN_add(V, V, tmp))
+		goto done;
+	if (!bn_division_by_two_mod_n(V, V, n, ctx))
+		goto done;
 
-        /* V = (V*V + D * tmp_U*tmp_U) * modinv(2, n) % n */
-        if (!BN_sqr(V_sqr, V, ctx)) goto done; // V*V
-        if (!BN_sqr(tmp_U_sqr, tmp_U, ctx)) goto done; // tmp_U * tmp_U
-        if (!BN_mul(D_mul_tmp_U_sqr, D, tmp_U_sqr, ctx)) goto done; // D * tmp_U^2
-        if (!BN_add(numerator, V_sqr, D_mul_tmp_U_sqr)) goto done; // (V*V + D * tmp_U*tmp_U)
+	if (digit == 1) {
+		/* Store D * U' before computing U''. */
+		if (!BN_mul(tmp, D, U, ctx))
+			goto done;
 
-        /* A divison by two is equivalent to a multiplication by the mod inverse of 2 by n*/
-        if (!BN_mod_mul(V, numerator, modinv_two, n, ctx)) goto done; // V = (V*V + D * tmp_U*tmp_U) * modinv(2, n) % n
-        if (!BN_lshift1(k, k)) goto done; // k *= 2
+		/* U'' = (U' + V') / 2 (mod n). */
+		if (!BN_add(U, U, V))
+			goto done;
+		if (!bn_division_by_two_mod_n(U, U, n, ctx))
+			goto done;
 
-        if (bit == 1) {
-            BN_copy(tmp_U, U);
-            if (!BN_add(U_V_add, U, V)) goto done; // U + V
-            if (!BN_mul(numerator, P, U_V_add, ctx)) goto done; // P * U+V
-            if (!BN_mod_mul(U, numerator, modinv_two, n, ctx)) goto done; // U = (P * U + V) * modinv(2, n) % n
+		/* V'' = (V' + D * U') / 2 (mod n). */
+		if (!BN_add(V, V, tmp))
+			goto done;
+		if (!bn_division_by_two_mod_n(V, V, n, ctx))
+			goto done;
+	}
 
+	ret = 1;
 
-            // V = (D * tmp_U + P * V) * modinv(2, n) % n;
-            if (!BN_mul(D_mul_tmp_U, D, tmp_U, ctx)) goto done;
-            if (!BN_mul(P_V, P, V, ctx)) goto done;
-            if (!BN_add(numerator, D_mul_tmp_U, P_V)) goto done;
-            if (!BN_mod_mul(V, numerator, modinv_two, n, ctx)) goto done;
+ done:
+	BN_CTX_end(ctx);
 
-            if (!BN_add(k, k, BN_value_one())) goto done; // k += 1
-        }
-        i++;
-    }
+	return ret;
+}
 
-    if (BN_cmp(k, k_obj) != 0) {
-        result = 0;
-        goto done;
-    }
+/*
+ * Compute the Lucas terms U_k, V_k, see FIPS 186-4, Appendix C.3.3, steps 4-6.
+ */
+int bn_lucas(BIGNUM *U, BIGNUM *V, const BIGNUM *k, const BIGNUM *D,
+    const BIGNUM *n, BN_CTX *ctx)
+{
+	int digit, i;
+	int ret = 0;
 
-    BN_copy(lucas_->U, U);
-    BN_copy(lucas_->V, V);
-    result = 1;
+	if (!BN_one(U))
+		goto done;
+	if (!BN_one(V))
+		goto done;
 
-    done:
-        BN_free(bn_two);
-        BN_free(U);
-        BN_free(tmp_U);
-        BN_free(tmp_U_sqr);
-        BN_free(V);
-        BN_free(V_sqr);
-        BN_free(U_V_add);
-        BN_free(P_V);
-        BN_free(D_mul_tmp_U);
-        BN_free(D_mul_tmp_U_sqr);
-        BN_free(numerator);
-        BN_free(k_obj);
-        BN_free(modinv_two);
-        BN_CTX_free(ctx);
-        return result;
+	/*
+	 * Iterate over the digits of k from MSB to LSB. Start at digit 2
+	 * since the first digit is dealt with by setting U = 1 and V = 1.
+	 */
+	for (i = BN_num_bits(k) - 2; i >= 0; i--) {
+		digit = BN_is_bit_set(k, i);
+
+		if (!bn_lucas_step(U, V, digit, D, n, ctx))
+			goto done;
+	}
+
+	ret = 1;
+
+ done:
+	return ret;
 }

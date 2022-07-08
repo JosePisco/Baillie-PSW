@@ -5,10 +5,6 @@
 
 int main(void)
 {
-    /* unitary tests */
-    miller_rabin_tests();
-    jacobi_tests();
-
     /* test suite */
     bpsw_tests();
 
